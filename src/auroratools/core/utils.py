@@ -22,7 +22,7 @@ def track_progress_stdout(collection, title):
     digits = math.ceil(math.log10(count)) if count else 0
     fmt = "{{:s}}: {{:{0:d}}} / {{:{0:d}}}".format(digits)
     for i, thing in enumerate(collection):
-        if 0 <= i % tenth < 1:
+        if i % tenth < 1:
             print(fmt.format(title, i, count))
         yield thing
     print(fmt.format(title, count, count))

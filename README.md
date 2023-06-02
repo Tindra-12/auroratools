@@ -20,7 +20,6 @@ from pprint import pprint
 from auroratools.core.simple_loading import ItemQueryingData
 from auroratools.core.utils import configure_logging, track_progress_stdout
 
-
 configure_logging(logging.ERROR)
 
 items = ItemQueryingData.load_aurora_content_with_caching(
@@ -32,6 +31,13 @@ items = ItemQueryingData.load_aurora_content_with_caching(
 )
 print("# elements:", len(items))
 pprint(list(items.values())[:7], width=180)
+
+engine = ItemQueryingEngine(items.values())
+group = input("Type in an item type (e.g. 'Spell'): ")
+query = input("Type in a query (e.g. 'Warlock,0|1'): ")
+results = list(engine.scan_parse_select_attrs(group, query))
+print("# queried items:", len(results))
+pprint(results[:7], width=180)
 ```
 
 To get the content files, see

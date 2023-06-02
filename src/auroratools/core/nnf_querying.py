@@ -305,20 +305,17 @@ class QueryParser:
 KeyT = TypeVar("KeyT")
 
 
-class QueryingEngine(Generic[KeyT, ItemT], metaclass=ABCMeta):
-    def __init__(self, grouped_items: Mapping[KeyT, Iterable[ItemT]]):
+class QueryingEngine(Generic[KeyT, ItemT]):
+    def __init__(self, grouped_items: Mapping[KeyT, Iterable[ItemT]], flags_getter: AssignmentGetter):
         self.database = grouped_items
+        self.flags_getter = flags_getter
 
     def select(self, group: KeyT, query: Query = TOP) -> Iterable[ItemT]:
-        return query.select(self.database.get(group, ()), self.get_flags)
+        return query.select(self.database.get(group, ()), self.flags_getter)
 
     def scan_parse_select(self, group: KeyT, query: str = "") -> Iterable[ItemT]:
         items = self.database.get(group, ())
-        return QueryParser.scan_and_parse_nonempty(query).select(items, self.get_flags) if query else items
-
-    @abstractmethod
-    def get_flags(self, item: ItemT) -> Iterable[str]:
-        raise NotImplementedError()
+        return QueryParser.scan_and_parse_nonempty(query).select(items, self.flags_getter) if query else items
 
 
 # TESTING
