@@ -14,10 +14,24 @@ pip install .
 ## Usage
 
 ```python
-from auroratools.core.attrs_parsing import ItemAttrsParser
+import logging
+from pprint import pprint
 
-item_index = ItemAttrsParser.load_index_with_caching(
-    "out/items_cache.json", "Path to xml content files directory")
+from auroratools.core.simple_loading import ItemQueryingData
+from auroratools.core.utils import configure_logging, track_progress_stdout
+
+
+configure_logging(logging.ERROR)
+
+items = ItemQueryingData.load_aurora_content_with_caching(
+    # Put here the path to directories containing aurora content xml files
+    "Path to xml content files directory",
+    # The cache file is created when this piece of code is first executed
+    cache_file="aurora_content_cache.json",
+    progress=track_progress_stdout
+)
+print("# elements:", len(items))
+pprint(list(items.values())[:7], width=180)
 ```
 
 To get the content files, see

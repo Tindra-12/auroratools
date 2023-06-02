@@ -8,11 +8,10 @@ from pathlib import Path
 from xml.etree.ElementTree import Element
 from xml.etree import ElementTree as ETreeModule
 import enum
-import json
 import logging
 import re
 
-from auroratools.core.utils import PreParsing, StaticParser, ProgressTracker, Serializer, Deserializer
+from auroratools.core.base import AuroraPostParser, PreParsing, Deserializer
 
 _logger = logging.getLogger(__name__)
 _logger.setLevel(logging.DEBUG)
@@ -1168,7 +1167,7 @@ class EquipmentParser(AbstractAttrsParser[Item]):
         return cls.parser.get(info.attrs["category"], cls.gear_parser).create(info)
 
 
-class ItemAttrsParser(StaticParser[PreParsing, Item], AbstractAttrsParser[Item]):
+class ItemAttrsParser(AuroraPostParser[Item]):
     parser: dict[str, AbstractAttrsParser] = {
         "Item": EquipmentParser,
         "Armor": ArmorParser,
@@ -1194,41 +1193,8 @@ class ItemAttrsParser(StaticParser[PreParsing, Item], AbstractAttrsParser[Item])
     def create(cls, info: PreParsing) -> Item:
         return cls.parser.get(info.kind, cls.default).create(info)
 
-    @classmethod
-    def index_aurora_files(cls, *content_dirs: str | Path, base: str | Path = "",
-                           progress: ProgressTracker | None = None) -> dict[str, Item]:
-        pre = PreParsing.index_aurora_files(*content_dirs, base=base, progress=progress)
-        return cls.transform_index(pre, progress)
-
-    @classmethod
-    def serialize_index(cls, item_index: Mapping[str, Item],
-                        progress: ProgressTracker | None = None) -> dict[str, dict]:
-        return Serializer.transform_index(item_index, progress)
-
-    @classmethod
-    def deserialize_index(cls, json_index: Mapping[str, dict],
-                          progress: ProgressTracker | None = None) -> dict[str, Item]:
-        deserializer: Deserializer[Item] = Deserializer.with_subclasses_of(Item)
-        return deserializer.transform_index(json_index, progress)
-
-    @classmethod
-    def load_index_with_caching(cls, cache_file: str | Path, *content_dirs: str | Path, base: str | Path = "",
-                                progress: ProgressTracker | None = None) -> dict[str, Item]:
-        try:
-            # Stage 1. load cached content
-            with open(cache_file) as cache_file_handle:
-                json_index = json.load(cache_file_handle)
-            return cls.deserialize_index(json_index, progress)
-        except Exception as error:
-            if progress and isinstance(error, OSError):
-                list(progress(()))  # trigger progress for Stage 1.
-            # Stage 2. + 3. + 4. indexing + pre-parsing + parsing content
-            item_index = cls.index_aurora_files(*content_dirs, base=base, progress=progress)
-            # Stage 5. save parsed items in cache file
-            json_index = cls.serialize_index(item_index, progress)
-            with open(cache_file, "w") as cache_file_handle:
-                json.dump(json_index, cache_file_handle)
-            return item_index
+    _OUTPUT_TYPE = Item
+    _DYNAMIC_MODELS = Item,
 
 
 # MAIN - some test programs

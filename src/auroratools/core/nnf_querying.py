@@ -1,14 +1,14 @@
 from abc import ABCMeta, abstractmethod
-from collections.abc import Iterator, Iterable, Mapping, MutableMapping as MutMap
+from collections.abc import Iterator, Iterable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import re
-from typing import TypeVar, Generic, Union, Callable
+from typing import TypeVar, Generic, Union, Callable, Any
 
 from auroratools.core.utils import singleton
 
 __all__ = ["Query", "Logic", "Con", "Dis", "Top", "Bottom", "TOP", "BOTTOM", "LogicBuilder",
-           "Lookup", "Ref", "Test", "Unknown", "LookupMode", "LookupFactory",
-           "QuerySyntaxError", "QueryParser", "QueryingEngine"]
+           "Lookup", "Ref", "Test", "Unknown", "QuerySyntaxError", "QueryParser", "QueryingEngine"]
 
 
 # QUERY BASE CLASS AND LOGICAL QUERIES
@@ -146,11 +146,26 @@ class Lookup(Query, metaclass=ABCMeta):
     name: str
     true: bool
 
+    @staticmethod
+    def lookup(name: str) -> Any:
+        """Set lookup on a subclass or an instance"""
+        raise KeyError(name)
+
+    @classmethod
+    @contextmanager
+    def lookup_context(cls, lookup: Callable[[str], Any]):
+        if cls is Lookup:
+            raise TypeError("Don't call this method on Lookup but on its subclasses!")
+        cls.lookup = lookup
+        try:
+            yield None
+        finally:
+            del cls.lookup
+
 
 @dataclass(frozen=True)
 class Ref(Lookup):
     """Query forwarding / Reference to another query"""
-    lookup: Callable[[str], Query] = field(repr=False)
 
     def accepts(self, assignment: Iterable[str]) -> bool:
         return self.lookup(self.name).accepts(assignment) == self.true
@@ -159,7 +174,6 @@ class Ref(Lookup):
 @dataclass(frozen=True)
 class Test(Lookup):
     threshold: int
-    lookup: Callable[[str], int] = field(repr=False)
 
     def accepts(self, assignment: Iterable[str]) -> bool:
         return (self.lookup(self.name) >= self.threshold) == self.true
@@ -172,33 +186,6 @@ class Unknown(Lookup):
 
     def accepts(self, assignment: Iterable[str]) -> bool:
         raise NotImplementedError()
-
-
-class LookupMode:
-    PLACEHOLDER = True
-    TEST = False
-
-
-@dataclass(frozen=True)
-class LookupFactory:
-    refs: MutMap[str, Query] = field(default_factory=dict)
-    tests: MutMap[str, int] = field(default_factory=dict)
-
-    def __call__(self, placeholder_mode: bool, name: str, true: bool) -> Lookup:
-        # $(placeholder) => mode == True && [test:value] => mode == False
-        if placeholder_mode:  # $(placeholder)
-            return self.create_placeholder(name, true)
-        return self.create_alternative(name, true)
-
-    def create_placeholder(self, name: str, true: bool) -> Ref:
-        return Ref(name, true, self.refs.__getitem__)
-
-    def create_alternative(self, name: str, true: bool) -> Lookup:
-        name, value = name.rsplit(":", 1)
-        try:
-            return Test(name, true, int(value), self.tests.__getitem__)
-        except ValueError:
-            return Unknown(name, true, value)
 
 
 # QUERY PARSING
@@ -214,25 +201,28 @@ class QueryParser:
     EXPRESSION_MSG = "literal or '(' or '['"
     SEPARATOR_MSG = " separator ',' or '|' or "  # ) or EOF
 
-    def __init__(self, lookup_factory: Callable[[bool, str, bool], Query] | None = None):
-        self.lookup_factory = lookup_factory if lookup_factory is not None else LookupFactory()
+    @classmethod
+    def scan_and_parse(cls, query: str, default: Query = TOP) -> Query:
+        return cls.scan_and_parse_nonempty(query) if query else default
 
-    def scan_and_parse(self, query: str, default: Query = TOP) -> Query:
-        return self.scan_and_parse_nonempty(query) if query else default
+    @classmethod
+    def scan_and_parse_nonempty(cls, query: str) -> Query:
+        return cls.syntax_analysis(cls.tokenize(query))
 
-    def scan_and_parse_nonempty(self, query: str) -> Query:
-        return self.syntax_analysis(self.tokenize(query))
+    @classmethod
+    def scan_and_build(cls, query: str) -> LogicBuilder:
+        return cls.scan_and_build_nonempty(query) if query else LogicBuilder(Con)
 
-    def scan_and_build(self, query: str) -> LogicBuilder:
-        return self.scan_and_build_nonempty(query) if query else LogicBuilder(Con)
+    @classmethod
+    def scan_and_build_nonempty(cls, query: str) -> LogicBuilder:
+        return cls.syntax_analysis_builder(cls.tokenize(query))
 
-    def scan_and_build_nonempty(self, query: str) -> LogicBuilder:
-        return self.syntax_analysis_builder(self.tokenize(query))
+    @classmethod
+    def syntax_analysis(cls, tokens: Iterator[str]) -> Query:
+        return cls.syntax_analysis_builder(tokens).build()
 
-    def syntax_analysis(self, tokens: Iterator[str]) -> Query:
-        return self.syntax_analysis_builder(tokens).build()
-
-    def syntax_analysis_builder(self, tokens: Iterator[str], positive: bool = True,
+    @classmethod
+    def syntax_analysis_builder(cls, tokens: Iterator[str], positive: bool = True,
                                 outermost: bool = True) -> LogicBuilder:
         outer_set = LogicBuilder(Dis)
         inner_set = LogicBuilder(Con)
@@ -245,23 +235,23 @@ class QueryParser:
                     token_positive = not positive
                     token = next(tokens)
                 if token == "(":
-                    inner_set.add_sub(self.syntax_analysis_builder(tokens, token_positive, False))
+                    inner_set.add_sub(cls.syntax_analysis_builder(tokens, token_positive, False))
                 elif token == "$":
-                    self._check_token(tokens, "(", "to introduce placeholder name")
-                    inner_set.add_sub(self.lookup_factory(LookupMode.PLACEHOLDER, next(tokens), token_positive))
-                    self._check_token(tokens, ")", "to conclude placeholder name")
+                    cls._check_token(tokens, "(", "to introduce placeholder name")
+                    inner_set.add_sub(Ref(next(tokens), token_positive))
+                    cls._check_token(tokens, ")", "to conclude placeholder name")
                 elif token == "[":
-                    inner_set.add_sub(self.lookup_factory(LookupMode.TEST, next(tokens), token_positive))
-                    self._check_token(tokens, "]", "to conclude test expression")
+                    inner_set.add_sub(cls._create_test_or_unknown(next(tokens), token_positive))
+                    cls._check_token(tokens, "]", "to conclude test expression")
                 elif token not in (",", "|", ")", "!"):
                     if token_positive:
                         inner_set.pos.add(token)
                     else:
                         inner_set.neg.add(token)
                 else:
-                    raise QuerySyntaxError(token, self.EXPRESSION_MSG)
+                    raise QuerySyntaxError(token, cls.EXPRESSION_MSG)
             except StopIteration:
-                raise QuerySyntaxError("", self.EXPRESSION_MSG)
+                raise QuerySyntaxError("", cls.EXPRESSION_MSG)
             # 2. Separator: , or || or ) or EOF
             try:
                 token = next(tokens)
@@ -273,13 +263,13 @@ class QueryParser:
                 elif token == ")":
                     if not outermost:
                         break
-                    raise QuerySyntaxError(token, "any other" + self.SEPARATOR_MSG + "EOF")
+                    raise QuerySyntaxError(token, "any other" + cls.SEPARATOR_MSG + "EOF")
                 else:
-                    raise QuerySyntaxError(token, "a" + self.SEPARATOR_MSG + "')' or EOF")
+                    raise QuerySyntaxError(token, "a" + cls.SEPARATOR_MSG + "')' or EOF")
             except StopIteration:
                 if outermost:
                     break
-                raise QuerySyntaxError("", "any other" + self.SEPARATOR_MSG + "')'")
+                raise QuerySyntaxError("", "any other" + cls.SEPARATOR_MSG + "')'")
         outer_set.add_sub(inner_set)
         return outer_set
 
@@ -293,6 +283,14 @@ class QueryParser:
             raise QuerySyntaxError("", repr(expected) + " " + message)
 
     @classmethod
+    def _create_test_or_unknown(cls, token: str, true: bool) -> Lookup:
+        name, value = token.rsplit(":", 1)
+        try:
+            return Test(name, true, int(value))
+        except ValueError:
+            return Unknown(name, true, value)
+
+    @classmethod
     def tokenize(cls, query: str) -> Iterator[str]:
         return filter(None, map(cls._preprocess_token, cls.SPECIAL_TOKENS.split(query)))
 
@@ -304,19 +302,23 @@ class QueryParser:
 
 # Item Querying from database
 
-DataT = TypeVar("DataT")
 KeyT = TypeVar("KeyT")
-Key2T = TypeVar("Key2T")
 
 
-class QueryingEngine(Generic[KeyT, DataT]):
-    def __init__(self, grouped_items: Mapping[KeyT, Iterable[DataT]],
-                 getter: Callable[[DataT], Iterable[str]]):
+class QueryingEngine(Generic[KeyT, ItemT], metaclass=ABCMeta):
+    def __init__(self, grouped_items: Mapping[KeyT, Iterable[ItemT]]):
         self.database = grouped_items
-        self.getter = getter
 
-    def select(self, group: KeyT, query: Query = TOP) -> Iterable[DataT]:
-        return query.select(self.database.get(group, ()), self.getter)
+    def select(self, group: KeyT, query: Query = TOP) -> Iterable[ItemT]:
+        return query.select(self.database.get(group, ()), self.get_flags)
+
+    def scan_parse_select(self, group: KeyT, query: str = "") -> Iterable[ItemT]:
+        items = self.database.get(group, ())
+        return QueryParser.scan_and_parse_nonempty(query).select(items, self.get_flags) if query else items
+
+    @abstractmethod
+    def get_flags(self, item: ItemT) -> Iterable[str]:
+        raise NotImplementedError()
 
 
 # TESTING
