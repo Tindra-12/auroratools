@@ -324,7 +324,7 @@ if __name__ == '__main__':
     from collections import defaultdict
     from pprint import pprint
 
-    from auroratools.core.utils import index_aurora_files
+    from auroratools.core.base import index_aurora_files
 
     class ConstructorHook:
         def __init__(self, cls: type):

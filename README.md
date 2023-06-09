@@ -17,7 +17,7 @@ pip install .
 import logging
 from pprint import pprint
 
-from auroratools.core.simple_loading import ItemQueryingData
+from auroratools.core.item_querying import ItemQueryingData, ItemQueryingEngine
 from auroratools.core.utils import configure_logging, track_progress_stdout
 
 configure_logging(logging.ERROR)

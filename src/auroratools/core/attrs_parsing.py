@@ -1203,7 +1203,8 @@ if __name__ == '__main__':
     import logging
     from pprint import pprint
 
-    from auroratools.core.utils import index_aurora_files, configure_logging
+    from auroratools.core.utils import configure_logging
+    from auroratools.core.base import index_aurora_files
 
     configure_logging(logging.DEBUG)
 
@@ -1380,37 +1381,11 @@ if __name__ == '__main__':
     #     if "description" in xml.others and len(xml.others["description"]) > 1:
     #         print(xml.id)
 
-    def test_load_with_cache():
-        logging.getLogger().handlers[-1].setLevel(logging.ERROR)
-        print("---" * 25)
-
-        # Clean up cache from last usage
-        cache_file_path = BASE / "out/small_items_cache.json"
-        cache_file_path.unlink(missing_ok=True)
-
-        # Progress tracker
-        def pt(x):
-            print(texts.pop(0), "- length:", len(x))
-            return x
-
-        # Call for the first time
-        texts = list(map(lambda x: "Stage {}".format(x+1), range(5)))
-        a = ItemAttrsParser.load_index_with_caching(
-            cache_file_path, BASE / "../content/A-aurora-legacy/core", progress=pt)
-        print("Result 1: #", len(a))
-
-        # Call for the second time
-        texts = list(map(lambda x: "Stage {}".format(x+1), range(5)))
-        a = ItemAttrsParser.load_index_with_caching(
-            cache_file_path, BASE / "../content/A-aurora-legacy/core", progress=pt)
-        print("Result 2: #", len(a))
-
-    # print_node_main_tags()
-    # weapons_weapon_properties()
-    # test_data_parsing()
-    # items_with_proficiency()
-    # item_names_with_parentheses()
-    # sheet_counts()
-    # test_meta_parsing()
-    # text_attr_per_type()
-    test_load_with_cache()
+    print_node_main_tags()
+    weapons_weapon_properties()
+    test_data_parsing()
+    items_with_proficiency()
+    item_names_with_parentheses()
+    sheet_counts()
+    test_meta_parsing()
+    text_attr_per_type()

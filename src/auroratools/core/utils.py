@@ -28,7 +28,10 @@ def track_progress_stdout(collection, title):
     print(fmt.format(title, count, count))
 
 
-def configure_logging(level: int | str, fmt: str = "%(levelname)s - %(name)s - %(message)s"):
+_LOG_FMT = "%(levelname)s %(name)s|%(funcName)s - %(message)s"
+
+
+def configure_logging(level: int | str, fmt: str = _LOG_FMT):
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(logging.Formatter(fmt))
     console_handler.setLevel(level)
